@@ -227,15 +227,16 @@ public class KafkaAppMaster implements Runnable, AMRMClientAsync.CallbackHandler
 
 
 
-    public void registerAppMaster() throws Exception {
+    public void registerAppMaster(int trackerPort) throws Exception {
         final String host = getAvroServerHost();
         final int port = getAvroServerPort();
         InetAddress inetAddress = InetAddress.getByName(host);
 
         LOG.info("registration rm, app host name: " + inetAddress + ":" + port);
 
+        String trackerUrl =  "http://" + host + ":" + trackerPort + "/";
         RegisterApplicationMasterResponse resp =
-                client.registerApplicationMaster(host, port, null);
+                client.registerApplicationMaster(host, port, trackerUrl);
         LOG.info("Got a registration response " + resp);
         LOG.info("Max Capability " + resp.getMaximumResourceCapability());
     }
@@ -454,7 +455,8 @@ public class KafkaAppMaster implements Runnable, AMRMClientAsync.CallbackHandler
         KafkaAppMaster server = new KafkaAppMaster(conf, hadoopConf, "", appAttemptID.getApplicationId());
         try {
             server.startAppMasterUI(argsMap);
-            server.registerAppMaster();
+
+            server.registerAppMaster(conf.getInt("yarn.kafka.appmaster.args.port"));
 
             LOG.info("Starting launcher");
             server.initAndStartLauncher();
