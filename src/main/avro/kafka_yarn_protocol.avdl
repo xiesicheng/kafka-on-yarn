@@ -1,0 +1,68 @@
+@namespace("com.ivyft.kafka.yarn.protocol")
+
+/**
+ Kafka Yarn Interface
+ */
+protocol KafkaYarnProtocol {
+
+
+    record NodeContainer {
+
+        /**
+         Container 运行的 Host
+         */
+        string nodeHost;
+
+
+        /**
+         Container RPC port
+         */
+        int nodePort;
+
+        /**
+        Yarn 分配的 Container Id
+         */
+        string containerId;
+
+
+        /**
+        Kafka ApplicationMaster Tracker URI
+         */
+        string nodeHttpAddress;
+    }
+
+    enum IdType {
+        CONTAINER_ID, NODE_ID
+    }
+
+
+
+    /**
+      List Kafka Instance
+     */
+    array<NodeContainer> listInstance();
+
+
+    /**
+    添加启动 Kafka Instance, 默认为1, 可以启动多个
+     */
+    void addInstance(int memory, int cores, string jettyZip);
+
+
+    /**
+       停止 Kafka Instance
+     */
+    void stopInstance(string id, IdType idType);
+
+
+    /**
+     停止所有的 Kafka Instance
+     */
+    void stopAll();
+
+
+    /**
+      停止 Kafka On Yarn 集群
+     */
+    void shutdown();
+}
