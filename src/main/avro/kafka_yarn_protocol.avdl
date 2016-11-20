@@ -46,7 +46,7 @@ protocol KafkaYarnProtocol {
     /**
     添加启动 Kafka Instance, 默认为1, 可以启动多个
      */
-    void addInstance(int memory, int cores, string jettyZip);
+    void addInstance(int memory, int cores, int brokerId);
 
 
     /**
