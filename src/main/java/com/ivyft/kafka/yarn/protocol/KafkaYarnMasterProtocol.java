@@ -65,12 +65,11 @@ public class KafkaYarnMasterProtocol implements KafkaYarnProtocol {
     }
 
     @Override
-    public Void addInstance(int memory, int cores, CharSequence kafkaConf) throws AvroRemoteException {
+    public Void addInstance(int memory, int cores, int brokerId) throws AvroRemoteException {
         if(amrmClient.containerIsEmpty()) {
             this.appMaster.newContainer(memory, cores);
         }
-        kafkaConf = kafkaConf == null ? "./conf/server.properties" : kafkaConf;
-        this.amrmClient.startInstance(kafkaConf.toString(), kafkaConf.toString());
+        this.amrmClient.startInstance(brokerId, appMaster.getKafkaConf());
         return null;
     }
 

@@ -70,8 +70,8 @@ public class KafkaYarnClient implements KafkaYarnProtocol {
     }
 
     @Override
-    public Void addInstance(int memory, int cores, CharSequence kafkaZip) throws AvroRemoteException {
-        return this.kafkaYarnProtocol.addInstance(memory, cores, kafkaZip);
+    public Void addInstance(int memory, int cores, int brokerId) throws AvroRemoteException {
+        return this.kafkaYarnProtocol.addInstance(memory, cores, brokerId);
     }
 
     @Override

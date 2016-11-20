@@ -146,6 +146,7 @@ public class Util {
 
     public static List<String> buildNodeCommands(KafkaConfiguration conf,
                                                  int mb,
+                                                 int brokerId,
                                                  String kafkaConf) throws IOException {
         List<String> toRet = buildCommandPrefix(conf);
         toRet.add("-Xmx" + mb + "m");
@@ -162,8 +163,17 @@ public class Util {
         toRet.add("-Dkafka.log.file=" + "kafka-" + ApplicationConstants.Environment.USER.$()
                 + "-" +
                 ApplicationConstants.Environment.NM_HOST.$() + ".log");
+
+        //start-kafka -app_attempt_id appattempt_1479611954389_0001_000001 -id 0 -pfile /Volumes/Study/Work/IntelliJWork/kafka-yarn/conf/server.properties
         toRet.add(KafkaOnYarn.class.getName());
-        toRet.add(ApplicationConstants.Environment.PWD.$() + File.separator + kafkaConf);
+        toRet.add("start-kafka");
+
+        toRet.add("-id");
+        toRet.add(String.valueOf(brokerId));
+        toRet.add("-logdir");
+        toRet.add(ApplicationConstants.LOG_DIR_EXPANSION_VAR);
+        toRet.add("-pfile");
+        toRet.add(ApplicationConstants.Environment.PWD.$() + File.separator + "conf" + File.separator + kafkaConf);
         toRet.add("1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout");
         toRet.add("2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr");
         return toRet;

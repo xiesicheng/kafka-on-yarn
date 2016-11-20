@@ -123,12 +123,12 @@ public class KafkaAMRMClient implements NMClientAsync.CallbackHandler {
 
 
 
-    public void startInstance(String kafkaZip, String kafkaConf) {
+    public void startInstance(int brokerId, String kafkaConf) {
         try {
             currentContainer = CONTAINER_QUEUE.take();
             LOCK.lock();
             try {
-                launchKafkaNodeOnContainer(currentContainer, kafkaConf);
+                launchKafkaNodeOnContainer(currentContainer, brokerId, kafkaConf);
 
 
                 ContainerId containerId = currentContainer.getId();
@@ -281,6 +281,7 @@ public class KafkaAMRMClient implements NMClientAsync.CallbackHandler {
      * @throws IOException
      */
     public void launchKafkaNodeOnContainer(Container container,
+                                           int brokerId,
                                            String kafkaConf)
             throws IOException {
         //Path[] paths = null;
@@ -365,6 +366,7 @@ public class KafkaAMRMClient implements NMClientAsync.CallbackHandler {
 
         List<String> masterArgs = Util.buildNodeCommands(this.conf,
                 currentContainer.getResource().getMemory(),
+                brokerId,
                 kafkaConf);
 
         LOG.info("luanch: " + StringUtils.join(masterArgs, "  "));

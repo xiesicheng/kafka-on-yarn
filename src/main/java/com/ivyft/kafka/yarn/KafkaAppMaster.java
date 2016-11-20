@@ -183,7 +183,7 @@ public class KafkaAppMaster implements Runnable, AMRMClientAsync.CallbackHandler
         int mb = Integer.parseInt(System.getProperty("kafka.instance.memory", "512"));
         int cores = Integer.parseInt(System.getProperty("kafka.instance.cores", "1"));
         for (int i = 0; i < num; i++) {
-            this.protocol.addInstance(mb, cores, null);
+            this.protocol.addInstance(mb, cores, i);
         }
     }
 
@@ -411,6 +411,7 @@ public class KafkaAppMaster implements Runnable, AMRMClientAsync.CallbackHandler
         Options opts = new Options();
         opts.addOption("app_attempt_id", true, "App Attempt ID. Not to be used unless for testing purposes");
         opts.addOption("num", true, "default Kafka Instance Number, default 1.");
+        opts.addOption("conf", true, "default Kafka Properties file");
 
 
         CommandLine cl = new GnuParser().parse(opts, args);
@@ -428,6 +429,11 @@ public class KafkaAppMaster implements Runnable, AMRMClientAsync.CallbackHandler
         } else {
             LOG.error("appAttemptID is not specified for storm master");
             throw new Exception("appAttemptID is not specified for storm master");
+        }
+
+        String kafkaConf = cl.getOptionValue("conf");
+        if(StringUtils.isBlank(kafkaConf)) {
+            throw new IllegalStateException("kafka application master args conf must not be null.");
         }
 
         int num = 1;
@@ -452,7 +458,7 @@ public class KafkaAppMaster implements Runnable, AMRMClientAsync.CallbackHandler
 
         YarnConfiguration hadoopConf = new YarnConfiguration();
 
-        KafkaAppMaster server = new KafkaAppMaster(conf, hadoopConf, "", appAttemptID.getApplicationId());
+        KafkaAppMaster server = new KafkaAppMaster(conf, hadoopConf, kafkaConf, appAttemptID.getApplicationId());
         try {
             server.startAppMasterUI(argsMap);
 
@@ -462,7 +468,7 @@ public class KafkaAppMaster implements Runnable, AMRMClientAsync.CallbackHandler
             server.initAndStartLauncher();
 
             LOG.info("Starting Kafka Container");
-            //server.initStartDefaultContainer(num);
+            server.initStartDefaultContainer(num);
 
             LOG.info("Starting Kafka App Master Avro Server");
             server.serve();

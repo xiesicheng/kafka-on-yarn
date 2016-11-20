@@ -1,17 +1,16 @@
 package com.ivyft.kafka.yarn;
 
+import com.google.common.io.Files;
 import com.ivyft.kafka.yarn.protocol.IdType;
 import com.ivyft.kafka.yarn.protocol.KafkaYarnClient;
 import com.ivyft.kafka.yarn.protocol.NodeContainer;
 import com.ivyft.kafka.yarn.socket.FreeSocketPortFactory;
 import com.ivyft.kafka.yarn.socket.SocketPortFactory;
 import com.ivyft.kafka.yarn.util.NetworkUtils;
-import kafka.metrics.KafkaMetricsConfig;
-import kafka.server.KafkaConfig;
-import kafka.server.KafkaServerStartable;
 import kafka.utils.Utils;
 import org.apache.avro.AvroRemoteException;
 import org.apache.commons.cli.*;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.hadoop.fs.FileSystem;
@@ -32,16 +31,12 @@ import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.collection.Iterator;
-import scala.collection.Seq;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.*;
 
 /**
@@ -116,6 +111,8 @@ public class KafkaOnYarn {
 
 
 
+        private String kafkaConf = "conf/server.properties";
+
 
         /**
          * App Kafka 默认的内存大小, -Xmx
@@ -135,6 +132,8 @@ public class KafkaOnYarn {
             Options options = new Options();
             options.addOption("appid", "appid", true, "App Id, KafkaOnYarn ApplicationMaster ID");
             options.addOption("shutdown", "shutdown", false, "App Name, shutdown KafkaOnYarn");
+            options.addOption("conf", true, "Kafka Conf File, default conf/server.properties");
+
             options.addOption("n", "appname", true, "App Name, KafkaOnYarn");
             options.addOption("im", "instance-memory", true, "Kafka Instance Memory, default 512M");
             options.addOption("ic", "instance-cores", true, "Kafka Instance Cores, default 1");
@@ -165,6 +164,18 @@ public class KafkaOnYarn {
             if (!StringUtils.equals("Y", StringUtils.upperCase(s))) {
                 return;
             }
+
+
+            String kafkaProp = cl.getOptionValue("conf");
+            if(StringUtils.isNotBlank(kafkaProp)) {
+                this.kafkaConf = kafkaProp;
+            }
+
+            File confFile = new File(kafkaConf);
+            if(!confFile.exists() || confFile.isDirectory()) {
+                throw new IllegalStateException("unknow kafka conf file: " + kafkaConf);
+            }
+
             String appName = cl.getOptionValue("n");
             if (StringUtils.isNotBlank(appName)) {
                 this.appName = appName;
@@ -199,7 +210,7 @@ public class KafkaOnYarn {
 
             KafkaConfiguration conf = new KafkaConfiguration("kafka.yarn.properties");
             launchApplication(this.appName, this.queue, amMB, appMasterCores, conf,
-                    kafkaMB, kafkaInstanceCores, defaultInstance);
+                    kafkaMB, kafkaInstanceCores, confFile, defaultInstance);
         }
 
 
@@ -222,16 +233,16 @@ public class KafkaOnYarn {
         private String appId;
         private int cores = 1;
         private int mb = 512;
-        private String kafkaConf = "conf/server.properties";
 
         @Override
         public Options getOpts() {
             Options options = new Options();
             options.addOption("appid", "appid", true, "App Id, KafkaOnYarn ApplicationMaster ID");
+            options.addOption("brokerid", true, "Kafka Broker Id");
+
 
             options.addOption("m", "memory", true, "Kafka Instance Memory, default 512M");
             options.addOption("c", "core", true, "Kafka Instance Cores, default 1");
-            options.addOption("prop", true, "Kafka Instance Cores, default 1");
 
             options.addOption("s", false, "print exception");
             return options;
@@ -257,16 +268,22 @@ public class KafkaOnYarn {
                 this.cores = Integer.parseInt(c);
             }
 
-            String kafkaProp = cl.getOptionValue("prop");
-            if(StringUtils.isNotBlank(kafkaProp)) {
-                this.kafkaConf = kafkaProp;
+            String brockerId = cl.getOptionValue("brokerid");
+            int id = 0;
+            if(StringUtils.isNotBlank(brockerId)) {
+                id = Integer.parseInt(brockerId);
+                if(id < 0) {
+                    throw new IllegalArgumentException("brokerid must greater than 0.");
+                }
+            } else {
+                throw new IllegalArgumentException("broker id must not be null.");
             }
 
             KafkaConfiguration conf = new KafkaConfiguration("kafka.yarn.properties");
             KafkaYarnClient client = attachToApp(appId, conf).getClient();
             client.addInstance(this.mb,
                     this.cores,
-                    this.kafkaConf
+                    id
             );
             client.close();
         }
@@ -437,9 +454,8 @@ public class KafkaOnYarn {
 
 
             LOG.info("container id: " + appAttemptID);
-            KafkaConfiguration conf = new KafkaConfiguration();
+            KafkaConfiguration conf = new KafkaConfiguration(new File(pfile));
 
-            String kafkaHost = System.getProperty("kafka.host", NetworkUtils.getLocalhostName());
             if(StringUtils.isNotBlank(kafkaPort)) {
                 int port = Integer.parseInt(kafkaPort);
 
@@ -465,8 +481,7 @@ public class KafkaOnYarn {
             String pwd = System.getProperty("kafka.home");
             LOG.info("kafka.home=" + pwd);
 
-            File kafkaHome = new File(pwd);
-            File kafkaLogDir = new File(kafkaHome, "logs");
+            File kafkaLogDir = StringUtils.isBlank(logDir) ? new File(new File(pwd), "logs") : new File(logDir);
 
             if(!kafkaLogDir.exists()) {
                 LOG.info("mkdir " + kafkaLogDir.getAbsolutePath());
@@ -479,53 +494,34 @@ public class KafkaOnYarn {
                 props.setProperty("port", kafkaPort);
                 props.setProperty("log.dirs", kafkaLogDir.getAbsolutePath());
 
+                File ppfile = new File(pfile);
+                File propFile = new File(ppfile.getParent(), "new$" + ppfile.getName());
 
+                BufferedWriter writer = null;
+                try {
+                    writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(propFile), "UTF-8"));
+                    props.store(writer, "kafka rewrite properties file");
+                    LOG.info("store kafka conf file {}", propFile.getAbsoluteFile());
+                } finally {
+                    IOUtils.closeQuietly(writer);
+                }
 
-                KafkaConfig serverConfig = new KafkaConfig(props);
-
-                startReporters(serverConfig);
-                final KafkaServerStartable kafkaServerStartable = new KafkaServerStartable(serverConfig);
-
-                // attach shutdown handler to catch control-c
-                Runtime.getRuntime().addShutdownHook(new Thread() {
-                    @Override
-                    public void run() {
-                        kafkaServerStartable.shutdown();
-                    }
-                });
-                LOG.info("start kafka server success.");
-                kafkaServerStartable.startup();
-                kafkaServerStartable.awaitShutdown();
+                LOG.info("start kafka, conf {}", propFile.getAbsoluteFile());
+                LOG.info("================================");
+                LOG.info("========= conf content =========");
+                LOG.info("================================");
+                List<String> lines = Files.readLines(propFile, Charset.forName("UTF-8"));
+                for (String line : lines) {
+                    LOG.info(line);
+                }
+                LOG.info("================================");
+                kafka.Kafka.main(new String[]{ propFile.getAbsolutePath() });
             } catch (Exception e) {
                 LOG.error(ExceptionUtils.getFullStackTrace(e));
                 System.exit(143);
             }
         }
     };
-
-
-
-    public static void startReporters(final KafkaConfig serverConfig) {
-        //KafkaMetricsReporter kafkaMetricsReporter = new KafkaMetricsReporter();
-
-        KafkaMetricsConfig metricsConfig = new KafkaMetricsConfig(serverConfig.props());
-        if(metricsConfig.reporters().size() > 0) {
-            Seq<String> reporters = metricsConfig.reporters();
-            Iterator<String> iterator = reporters.iterator();
-            while (iterator.hasNext()) {
-                String reporterType = iterator.next();
-                //Seq<Object> objectSeq = new Seq();
-                //objectSeq.addString(new scala.collection.mutable.StringBuilder().append(reporterType));
-
-               // KafkaMetricsReporter reporter = Utils.createObject(KafkaMetricsReporter.class.getName(), objectSeq);
-                //reporter.init(serverConfig.props());
-
-                //if (reporter instanceof KafkaMetricsReporterMBean) {
-                //    Utils.registerMBean(reporter, ((KafkaMetricsReporterMBean) reporter).getMBeanName());
-                //}
-            }
-        }
-    }
 
 
     public static void printHelpFor(Collection<String> args) {
@@ -660,7 +656,9 @@ public class KafkaOnYarn {
      * @param appName
      * @param queue
      * @param amMB
-     * @param kafkaZip
+     * @param kafkaMB
+     * @param kafkaCores
+     * @param defaultInstance
      * @throws Exception
      */
     private void launchApp(String appName,
@@ -669,6 +667,7 @@ public class KafkaOnYarn {
                            int masterCores,
                            int kafkaMB,
                            int kafkaCores,
+                           File kafkaConf,
                            int defaultInstance) throws Exception {
         LOG.info("KafkaOnYarn:launchApp() ...");
         YarnClientApplication client_app = _yarn.createApplication();
@@ -823,6 +822,7 @@ public class KafkaOnYarn {
         //vargs.add("-verbose:class");
         vargs.add(com.ivyft.kafka.yarn.KafkaAppMaster.class.getName());
         vargs.add("-num " + defaultInstance);
+        vargs.add("-conf " + kafkaConf.getName());
 
         vargs.add("1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout");
         vargs.add("2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr");
@@ -847,9 +847,6 @@ public class KafkaOnYarn {
             // Get application report for the appId we are interested in
             ApplicationReport report = _yarn.getApplicationReport(_appId);
 
-            LOG.info(report.toString());
-
-
             YarnApplicationState state = report.getYarnApplicationState();
             FinalApplicationStatus dsStatus = report.getFinalApplicationStatus();
             if (YarnApplicationState.FINISHED == state) {
@@ -872,7 +869,7 @@ public class KafkaOnYarn {
 
             // Check app status every 1 second.
             try {
-                Thread.sleep(5000);
+                Thread.sleep(1000);
             } catch (InterruptedException e) {
                 LOG.debug("Thread sleep in monitoring loop interrupted");
             }
@@ -935,11 +932,12 @@ public class KafkaOnYarn {
                                                 KafkaConfiguration kafkaConf,
                                                 int kafkaMB,
                                                 int kafkaCores,
+                                                File conf,
                                                 int defaultInstance) throws Exception {
         KafkaOnYarn kafkaOnYarn = new KafkaOnYarn(kafkaConf);
         //TODO
         kafkaOnYarn.launchApp(appName, queue, amMB, appMasterCores,
-                kafkaMB, kafkaCores, defaultInstance);
+                kafkaMB, kafkaCores, conf, defaultInstance);
         kafkaOnYarn.waitUntilLaunched();
         return kafkaOnYarn;
     }
