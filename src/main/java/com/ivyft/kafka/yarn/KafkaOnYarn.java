@@ -158,14 +158,6 @@ public class KafkaOnYarn {
                 return;
             }
 
-            System.out.println("starting kafka on yarn, input Y/N");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-            String s = reader.readLine();
-            if (!StringUtils.equals("Y", StringUtils.upperCase(s))) {
-                return;
-            }
-
-
             String kafkaProp = cl.getOptionValue("conf");
             if(StringUtils.isNotBlank(kafkaProp)) {
                 this.kafkaConf = kafkaProp;
@@ -206,6 +198,14 @@ public class KafkaOnYarn {
                 if(kafkaInstanceCores < 1) {
                     kafkaInstanceCores = 1;
                 }
+            }
+
+
+            System.out.println("starting kafka on yarn, input Y/N");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+            String s = reader.readLine();
+            if (!StringUtils.equals("Y", StringUtils.upperCase(s))) {
+                return;
             }
 
             KafkaConfiguration conf = new KafkaConfiguration("kafka.yarn.properties");
