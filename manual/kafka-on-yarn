@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+unset CDPATH
+bin=`dirname "$0"`
+bin=`cd "$bin/../"; pwd`
+
+
+cygwin=false
+case "`uname`" in
+CYGWIN*) cygwin=true;;
+esac
+
+KAFKA_HOME=$bin
+KAFKA_CONF_DIR=$KAFKA_HOME/config
+
+# some Java parameters
+JAVA=`which java 2>/dev/null`
+if [[ $JAVA_HOME != "" ]]; then
+    JAVA=$JAVA_HOME/bin/java
+fi
+if test -z "$JAVA"; then
+    echo "No java found in the PATH. Please set JAVA_HOME."
+    exit 1
+fi
+JAVA_HEAP_MAX=-Xmx1000m 
+
+# check envvars which might override default args
+if [ "$KATTA_HEAPSIZE" != "" ]; then
+  #echo "run with heapsize $KATTA_HEAPSIZE"
+  JAVA_HEAP_MAX="-Xmx""$KATTA_HEAPSIZE""m"
+  #echo $JAVA_HEAP_MAX
+fi
+
+# CLASSPATH initially contains $KATTA_CONF_DIR
+CLASSPATH="${KAFKA_CONF_DIR}"
+
+
+# add libs to CLASSPATH
+for jar in $KAFKA_HOME/libs/*.jar; do
+  CLASSPATH=${CLASSPATH}:$jar;
+done
+
+# Extra Java CLASSPATH elements.  Optional.
+if [ "$HADOOP_HOME" ]; then
+    for jar in `ls $HADOOP_HOME/share/hadoop/common/hadoop*.jar`; do
+        export CLASSPATH=$CLASSPATH:$jar
+    done
+    for jar in `ls $HADOOP_HOME/share/hadoop/common/lib/hadoop*.jar`; do
+        export CLASSPATH=$CLASSPATH:$jar
+    done
+    for jar in `ls $HADOOP_HOME/share/hadoop/hdfs/hadoop*.jar`; do
+        export CLASSPATH=$CLASSPATH:$jar
+    done
+    for jar in `ls $HADOOP_HOME/share/hadoop/mapreduce/hadoop*.jar`; do
+        export CLASSPATH=$CLASSPATH:$jar
+    done
+    for jar in `ls $HADOOP_HOME/share/hadoop/yarn/hadoop*.jar`; do
+        export CLASSPATH=$CLASSPATH:$jar
+    done
+fi 
+
+# default log directory & file
+if [ "$KAFKA_LOG_DIR" = "" ]; then
+  KAFKA_LOG_DIR="$KAFKA_HOME/logs"
+fi
+if [ "$KAFKA_LOGFILE" = "" ]; then
+  KAFKA_LOGFILE='kafka-on-yarn.log'
+fi
+
+ 
+# restore ordinary behaviour
+# unset IFS
+CLASS='com.ivyft.kafka.yarn.KafkaOnYarn'
+
+
+KAFKA_OPTS="$KAFKA_OPTS -Djetty.log.dir=$KAFKA_LOG_DIR"
+KAFKA_OPTS="$KAFKA_OPTS -Djetty.log.file=$KAFKA_LOGFILE"
+KAFKA_OPTS="$KAFKA_OPTS -Djetty.home.dir=$KAFKA_HOME"
+KAFKA_OPTS="$KAFKA_OPTS -Djetty.id.str=$USER"
+KAFKA_OPTS="$KAFKA_OPTS -Djetty.root.logger=${KAFKA_ROOT_LOGGER:-INFO,console}"
+
+# run it
+exec "$JAVA" $JAVA_HEAP_MAX $KAFKA_OPTS -classpath "$CLASSPATH" $CLASS "$@"
