@@ -21,7 +21,7 @@
 
     <properties>
         <hadoop.version>2.6.5</hadoop.version>
-        <zookeeper.version>3.3.6</zookeeper.version>
+        <zookeeper.version>3.4.14</zookeeper.version>
         <avro.version>1.7.7</avro.version>
         <kafka.version>0.8.1.1</kafka.version>
 
